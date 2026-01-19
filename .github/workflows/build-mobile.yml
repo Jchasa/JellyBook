@@ -1,0 +1,70 @@
+name: Build mobile (Android/iOS)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: 'stable' }
+      - name: Flutter pub get
+        run: flutter pub get
+      - name: Build APK
+        run: flutter build apk --release
+      - name: Build AAB
+        run: flutter build appbundle --release
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+
+  ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: 'stable' }
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install --repo-update
+      - name: Flutter pub get
+        run: flutter pub get
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign
+      - name: Zip iOS build folder
+        run: |
+          mkdir -p artifacts
+          zip -r artifacts/ios-release-no-codesign.zip build/ios
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: artifacts/ios-release-no-codesign.zip
+
+  release:
+    needs: [android, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Publish GitHub Release (attach artifacts)
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            dist/android/app-release.apk
+            dist/android/app-release.aab
+            dist/ios/ios-release-no-codesign.zip
